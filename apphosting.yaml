@@ -1,0 +1,7 @@
+# Firebase App Hosting — use this when the project has a Blaze plan
+# and you want Next.js API routes (DeepSeek / Azure) on the server.
+runConfig:
+  cpu: 1
+  memoryMiB: 1024
+  minInstances: 0
+  maxInstances: 4
