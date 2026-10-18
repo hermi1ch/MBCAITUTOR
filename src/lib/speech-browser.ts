@@ -98,7 +98,12 @@ export async function speakWithBrowser(
   utter.rate = ttsLang === "en-US" ? 1.02 : 1.04;
 
   let open = true;
+  const startedAt = Date.now();
   return new Promise((resolve, reject) => {
+    const finishOk = () => {
+      hooks.onEnd?.();
+      resolve();
+    };
     utter.onstart = () => {
       open = true;
       hooks.onStart?.();
@@ -110,13 +115,21 @@ export async function speakWithBrowser(
     };
     utter.onpause = () => hooks.onPause?.();
     utter.onend = () => {
-      hooks.onEnd?.();
-      resolve();
+      // Chrome sometimes fires end immediately if voices are not ready.
+      if (Date.now() - startedAt < 450) {
+        reject(new Error("TTS ended too quickly"));
+        return;
+      }
+      finishOk();
     };
     utter.onerror = (event) => {
-      hooks.onEnd?.();
       reject(new Error(event.error || "TTS error"));
     };
+    try {
+      window.speechSynthesis.resume();
+    } catch {
+      // ignore
+    }
     window.speechSynthesis.speak(utter);
   });
 }

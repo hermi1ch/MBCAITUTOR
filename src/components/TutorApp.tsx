@@ -73,6 +73,7 @@ export function TutorApp() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recRef = useRef<SpeechRecognition | null>(null);
   const nodTimer = useRef<number | null>(null);
+  const playGen = useRef(0);
 
   useEffect(() => {
     fetch("/api/health")
@@ -109,10 +110,20 @@ export function TutorApp() {
     async (reply: TutorState) => {
       stopVoice();
       clearNod();
+      const token = ++playGen.current;
       const spoken = reply.ttsLang === "en-US" ? reply.en : reply.zh;
+      const visualMs = Math.min(12000, Math.max(2200, spoken.length * 95));
       setSpeaking(true);
       setMouthOpen(true);
       setPose("talking");
+
+      let settled = false;
+      const finish = () => {
+        if (settled || playGen.current !== token) return;
+        settled = true;
+        settleAfterSpeech();
+      };
+      const watchdog = window.setTimeout(finish, visualMs);
 
       const hooks = {
         onStart: () => {
@@ -121,10 +132,12 @@ export function TutorApp() {
           setPose("talking");
         },
         onPause: () => {
-          setSpeaking(false);
           setMouthOpen(false);
         },
-        onEnd: () => settleAfterSpeech(),
+        onEnd: () => {
+          window.clearTimeout(watchdog);
+          finish();
+        },
       };
 
       try {
@@ -159,7 +172,7 @@ export function TutorApp() {
         try {
           await speakWithBrowser(spoken, reply.ttsLang, hooks);
         } catch {
-          settleAfterSpeech();
+          // Visual lip-sync continues until the watchdog; audio is optional.
         }
       }
     },
@@ -168,9 +181,12 @@ export function TutorApp() {
 
   useEffect(() => {
     if (!speaking) return;
+    let open = true;
+    setMouthOpen(true);
     const tick = window.setInterval(() => {
-      setMouthOpen((open) => !open);
-    }, 170);
+      open = !open;
+      setMouthOpen(open);
+    }, 150);
     return () => window.clearInterval(tick);
   }, [speaking]);
 
