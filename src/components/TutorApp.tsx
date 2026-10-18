@@ -32,10 +32,7 @@ type TutorState = TutorReply & { source?: "mock" | "deepseek" };
 function SpeakerIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 10v4h3l5 4V6L7 10H4z"
-        fill="currentColor"
-      />
+      <path d="M4 10v4h3l5 4V6L7 10H4z" fill="currentColor" />
       <path
         d="M16.5 8.5a5 5 0 0 1 0 7M18.8 6.2a8.5 8.5 0 0 1 0 11.6"
         stroke="currentColor"
@@ -49,12 +46,7 @@ function SpeakerIcon() {
 function HeadphoneIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 13a8 8 0 0 1 16 0"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M4 13a8 8 0 0 1 16 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <rect x="3" y="12" width="5" height="8" rx="2" fill="currentColor" />
       <rect x="16" y="12" width="5" height="8" rx="2" fill="currentColor" />
     </svg>
@@ -65,6 +57,7 @@ export function TutorApp() {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [lang, setLang] = useState<StudentLang>("yue");
   const [pose, setPose] = useState<Pose>("talking");
+  const [mouthOpen, setMouthOpen] = useState(true);
   const [tutor, setTutor] = useState<TutorState>({
     zh: GREETING_ZH,
     en: GREETING_EN,
@@ -79,6 +72,7 @@ export function TutorApp() {
   const [listening, setListening] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recRef = useRef<SpeechRecognition | null>(null);
+  const nodTimer = useRef<number | null>(null);
 
   useEffect(() => {
     fetch("/api/health")
@@ -87,20 +81,51 @@ export function TutorApp() {
       .catch(() => null);
   }, []);
 
+  const clearNod = useCallback(() => {
+    if (nodTimer.current) {
+      window.clearTimeout(nodTimer.current);
+      nodTimer.current = null;
+    }
+  }, []);
+
   const stopVoice = useCallback(() => {
     stopBrowserSpeech();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
+    setSpeaking(false);
   }, []);
+
+  const settleAfterSpeech = useCallback(() => {
+    setSpeaking(false);
+    setMouthOpen(false);
+    setPose("nod");
+    clearNod();
+    nodTimer.current = window.setTimeout(() => setPose("idle"), 650);
+  }, [clearNod]);
 
   const playTutorVoice = useCallback(
     async (reply: TutorState) => {
       stopVoice();
+      clearNod();
       const spoken = reply.ttsLang === "en-US" ? reply.en : reply.zh;
       setSpeaking(true);
-      setPose(reply.pose === "think" ? "talking" : reply.pose);
+      setMouthOpen(true);
+      setPose("talking");
+
+      const hooks = {
+        onStart: () => {
+          setSpeaking(true);
+          setMouthOpen(true);
+          setPose("talking");
+        },
+        onPause: () => {
+          setSpeaking(false);
+          setMouthOpen(false);
+        },
+        onEnd: () => settleAfterSpeech(),
+      };
 
       try {
         const res = await fetch("/api/tts", {
@@ -115,36 +140,41 @@ export function TutorApp() {
           const audio = new Audio(url);
           audioRef.current = audio;
           await new Promise<void>((resolve, reject) => {
-            audio.onended = () => resolve();
+            audio.onplay = () => hooks.onStart();
+            audio.onpause = () => {
+              if (!audio.ended) hooks.onPause();
+            };
+            audio.onended = () => {
+              hooks.onEnd();
+              resolve();
+            };
             audio.onerror = () => reject(new Error("audio"));
             audio.play().catch(reject);
           });
           URL.revokeObjectURL(url);
         } else {
-          await speakWithBrowser(spoken, reply.ttsLang);
+          await speakWithBrowser(spoken, reply.ttsLang, hooks);
         }
       } catch {
         try {
-          await speakWithBrowser(spoken, reply.ttsLang);
+          await speakWithBrowser(spoken, reply.ttsLang, hooks);
         } catch {
-          // Speech is optional; the panel still shows the bilingual text.
+          settleAfterSpeech();
         }
-      } finally {
-        setSpeaking(false);
-        setPose("nod");
-        window.setTimeout(() => setPose("idle"), 700);
       }
     },
-    [stopVoice],
+    [clearNod, settleAfterSpeech, stopVoice],
   );
 
   useEffect(() => {
     if (!speaking) return;
     const tick = window.setInterval(() => {
-      setPose((current) => (current === "talking" ? "explain" : "talking"));
-    }, 380);
+      setMouthOpen((open) => !open);
+    }, 170);
     return () => window.clearInterval(tick);
   }, [speaking]);
+
+  const shownPose: Pose = speaking ? (mouthOpen ? "talking" : "idle") : pose;
 
   const ask = useCallback(
     async (text: string, spokenLang: StudentLang = lang) => {
@@ -157,6 +187,7 @@ export function TutorApp() {
       });
       setDraft("");
       setPose("think");
+      setMouthOpen(false);
       stopVoice();
 
       try {
@@ -175,6 +206,7 @@ export function TutorApp() {
         if (!res.ok) throw new Error("tutor");
         const reply = (await res.json()) as TutorState;
         setTutor(reply);
+        setPose(reply.pose === "talking" ? "explain" : reply.pose);
         await playTutorVoice(reply);
       } catch {
         const fallback: TutorState = {
@@ -186,6 +218,7 @@ export function TutorApp() {
         };
         setTutor(fallback);
         setPose("idle");
+        setMouthOpen(false);
       } finally {
         setBusy(false);
       }
@@ -253,18 +286,13 @@ export function TutorApp() {
         <img className="garden" src="/character/garden.jpg" alt="" />
         <img
           className={`xiaoxin${speaking ? " is-talking" : ""}`}
-          src={POSE_SRC[pose]}
+          src={POSE_SRC[shownPose]}
           alt="小信"
         />
-        {health ? (
-          <div className="banner">
-            開放使用 · Open · tutor {health.tutor} · voice {health.tts}
-          </div>
-        ) : null}
 
         <div className="tutor-cluster">
           <div className="bubble bubble-tutor">
-            <span className="tag">小信</span>
+            <span className="tag tag-tutor">小信</span>
             <p className="line-zh">{tutor.zh}</p>
             <p className="line-en">{tutor.en}</p>
           </div>
@@ -281,7 +309,7 @@ export function TutorApp() {
 
         <div className="student-cluster">
           <div className="bubble bubble-student">
-            <span className="tag">同學</span>
+            <span className="tag tag-student">同學</span>
             {studentShown ? (
               <>
                 {student.zh ? <p className="line-zh">{student.zh}</p> : null}
@@ -335,6 +363,11 @@ export function TutorApp() {
         <button className="send" type="submit" disabled={busy || !draft.trim()}>
           發送
         </button>
+        {health ? (
+          <span className="status-chip">
+            開放 · {health.tutor} · {health.tts}
+          </span>
+        ) : null}
       </form>
     </div>
   );

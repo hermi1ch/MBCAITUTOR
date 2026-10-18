@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Slice 小信 expressions and build a garden plate without a second boy."""
+"""Slice 小信 expressions and build a full garden plate without a second boy."""
 
 from __future__ import annotations
 
@@ -101,13 +101,56 @@ def drop_studio_floor(img: Image.Image) -> Image.Image:
     return img
 
 
+def boy_mask(hero_bgr):
+    import cv2
+    import numpy as np
+
+    h, w = hero_bgr.shape[:2]
+    rect = (int(w * 0.28), int(h * 0.04), int(w * 0.42), int(h * 0.96))
+    mask = np.zeros((h, w), np.uint8)
+    bgd = np.zeros((1, 65), np.float64)
+    fgd = np.zeros((1, 65), np.float64)
+    cv2.grabCut(hero_bgr, mask, rect, bgd, fgd, 5, cv2.GC_INIT_WITH_RECT)
+    boy = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0).astype("uint8")
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(boy, 8)
+    if n > 1:
+        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        boy = np.where(labels == largest, 255, 0).astype("uint8")
+    boy = cv2.dilate(boy, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (71, 71)))
+    shift = np.zeros_like(boy)
+    shift[:, 40:] = boy[:, :-40]
+    return cv2.bitwise_or(boy, shift)
+
+
 def build_garden() -> None:
-    """Use the right-hand pavilion/pond from the hero so the plate has no center seam."""
-    hero = Image.open(HERO).convert("RGB")
-    w, h = hero.size
-    garden = hero.crop((int(w * 0.70), 0, w, h))
-    garden.save(SRC / "garden.jpg", "JPEG", quality=90)
-    print(f"wrote garden.jpg {garden.size}")
+    """Full hero garden with 小信 removed so the pose sprite can stand on the path."""
+    import cv2
+    import numpy as np
+
+    hero = cv2.imread(str(HERO))
+    if hero is None:
+        raise SystemExit(f"missing {HERO}")
+    boy = boy_mask(hero)
+    h, w = hero.shape[:2]
+    out = hero.copy()
+    for y in range(h):
+        marked = boy[y] > 0
+        if not marked.any():
+            continue
+        xs = np.where(marked)[0]
+        x0, x1 = int(xs.min()), int(xs.max())
+        xl, xr = x0 - 2, x1 + 2
+        if xl < 0 or xr >= w:
+            continue
+        left = out[y, xl].astype(np.float32)
+        right = out[y, xr].astype(np.float32)
+        span = max(1, xr - xl)
+        t = ((np.arange(x0, x1 + 1) - xl) / span).astype(np.float32)
+        out[y, x0 : x1 + 1] = (1 - t)[:, None] * left + t[:, None] * right
+    blur = cv2.GaussianBlur(out, (31, 31), 0)
+    out[boy.astype(bool)] = blur[boy.astype(bool)]
+    cv2.imwrite(str(SRC / "garden.jpg"), out, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    print(f"wrote garden.jpg {w}x{h}")
 
 
 if __name__ == "__main__":

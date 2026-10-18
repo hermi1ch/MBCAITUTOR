@@ -1,9 +1,11 @@
 import type { TutorReply } from "./types";
 
+// Young boy / child-like neural voices. Yunxi is a lively young male;
+// Yunxia is a child neural (used as fallback). Pitch is lifted in SSML.
 const VOICES: Record<TutorReply["ttsLang"], string> = {
-  "zh-HK": "zh-HK-WanLungNeural",
-  "zh-TW": "zh-TW-YunJheNeural",
-  "en-US": "en-US-GuyNeural",
+  "zh-HK": "zh-CN-YunxiNeural",
+  "zh-TW": "zh-CN-YunxiNeural",
+  "en-US": "en-US-AndrewNeural",
 };
 
 function escapeXml(text: string): string {
@@ -22,8 +24,11 @@ export async function azureSpeak(text: string, ttsLang: TutorReply["ttsLang"]): 
     throw new Error("Azure Speech is not configured");
   }
 
-  const ssml = `<speak version="1.0" xml:lang="${ttsLang}">
-  <voice name="${VOICES[ttsLang]}">${escapeXml(text)}</voice>
+  const xmlLang = ttsLang === "zh-HK" ? "zh-CN" : ttsLang;
+  const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${xmlLang}">
+  <voice name="${VOICES[ttsLang]}">
+    <prosody pitch="+18%" rate="+6%">${escapeXml(text)}</prosody>
+  </voice>
 </speak>`;
 
   const response = await fetch(
