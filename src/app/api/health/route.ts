@@ -1,8 +1,6 @@
 import { hasAzureSpeech, hasDeepSeekKey } from "@/lib/config";
 import type { HealthStatus } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
-
 export async function GET() {
   const body: HealthStatus = {
     tutor: hasDeepSeekKey() ? "deepseek" : "mock",

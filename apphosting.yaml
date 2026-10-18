@@ -10,4 +10,5 @@ env:
   - variable: DEEPSEEK_API_KEY
     secret: DEEPSEEK_API_KEY
     availability:
+      - BUILD
       - RUNTIME
