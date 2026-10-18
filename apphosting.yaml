@@ -5,3 +5,9 @@ runConfig:
   memoryMiB: 1024
   minInstances: 0
   maxInstances: 4
+
+env:
+  - variable: DEEPSEEK_API_KEY
+    secret: DEEPSEEK_API_KEY
+    availability:
+      - RUNTIME

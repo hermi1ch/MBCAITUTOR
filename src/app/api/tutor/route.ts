@@ -1,6 +1,8 @@
 import { askTutor } from "@/lib/deepseek";
 import type { StudentLang } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 const LANGS: StudentLang[] = ["yue", "cmn", "en"];
 
 export async function POST(request: Request) {
